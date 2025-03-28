@@ -1,5 +1,5 @@
 const std = @import("std");
-const adf = @import("adf.zig");
+const lib = @import("zip_ls.zig");
 
 extern fn on_result(ptr: [*]const u8, len: usize) void;
 
@@ -14,58 +14,39 @@ const RES = enum(u8) {
     }
 };
 
-export fn getHeader(ptr: [*]u8, len: usize) u8 {
+export fn listContent(ptr: [*]u8, len: usize) u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     const aa = arena.allocator();
     defer arena.deinit();
 
-    var header = adf.decodeHeader(ptr[0..len]);
+    // var header = lib.decodeHeader(ptr[0..len]);
+    var stream = std.io.fixedBufferStream(ptr[0..len]);
+    var cd = lib.centralDirectory(aa, stream) catch {
+        return RES.err.toInt();
+    };
     var list = std.ArrayList(u8).init(aa);
 
-    std.json.stringify(header, .{ .whitespace = .indent_tab }, list.writer()) catch {
+    std.json.stringify(cd, .{ .whitespace = .indent_tab }, list.writer()) catch {
         return RES.err.toInt();
     };
     on_result(list.items.ptr, list.items.len);
     return RES.ok.toInt();
 }
 
-export fn toHtml(ptr: [*]u8, len: usize) u8 {
-    const res = toHtml_(ptr, len) catch |err| switch (err) {
-        error.OutOfMemory => return RES.outOfMemory.toInt(),
-        else => return RES.err.toInt(),
-    };
-    on_result(res.items.ptr, res.items.len);
-    return RES.ok.toInt();
-}
-
-export fn toJson(ptr: [*]u8, len: usize) u8 {
-    const res = toJson_(ptr, len) catch |err| switch (err) {
-        error.OutOfMemory => return RES.outOfMemory.toInt(),
-        else => return RES.err.toInt(),
-    };
-    on_result(res.ptr, res.len);
-    return RES.ok.toInt();
-}
-
-fn toJson_(ptr: [*]u8, len: usize) ![]const u8 {
+export fn readRecord(ptr: [*]u8, len: usize, index: usize) u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     const aa = arena.allocator();
     defer arena.deinit();
 
-    var header = adf.decodeHeader(ptr[0..len]);
-    var deflated_json = ptr[header.documentOffset .. header.documentOffset + len];
-    return try adf.inflateBuffer(aa, deflated_json);
-}
+    var stream = std.io.fixedBufferStream(ptr[0..len]);
+    var cd = lib.centralDirectory(aa, stream) catch {
+        return RES.err.toInt();
+    };
 
-fn toHtml_(ptr: [*]u8, len: usize) !std.ArrayList(u8) {
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    const aa = arena.allocator();
-    defer arena.deinit();
-
-    var list = std.ArrayList(u8).init(aa);
-    var header = adf.decodeHeader(ptr[0..len]);
-    var deflated_json = ptr[header.documentOffset .. header.documentOffset + len];
-    var inflated_json = try adf.inflateBuffer(aa, deflated_json);
-    try adf.adfToHtml(aa, inflated_json, list.writer());
-    return list;
+    const record = cd[index];
+    const content = lib.inflateBuffer(arena.allocator(), ptr[record.info.offset..len]) catch {
+        return RES.err.toInt();
+    };
+    on_result(content.ptr, content.len);
+    return RES.ok.toInt();
 }

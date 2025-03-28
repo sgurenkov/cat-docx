@@ -40,7 +40,9 @@ pub fn build(b: *std.Build) void {
     // wasm.global_base = 65000;
 
     wasm.rdynamic = true;
-    const install_wasm_step = b.addInstallArtifact(wasm, .{});
+    const install_wasm_step = b.addInstallArtifact(wasm, .{
+        .dest_dir = .{ .override = .{ .custom = "../js-solid/public" } },
+    });
 
     const wasm_step = b.step("wasm", "Build wasm artifact");
     wasm_step.dependOn(&install_wasm_step.step);
@@ -51,7 +53,7 @@ pub fn build(b: *std.Build) void {
     const tests = b.addTest(.{
         .target = target,
         .optimize = optimize,
-        .root_source_file = .{ .path = "src/main.zig" },
+        .root_source_file = .{ .path = "src/zip_ls.zig" },
     });
 
     tests.addModule("clap", clap);
